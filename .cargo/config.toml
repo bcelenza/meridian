@@ -1,0 +1,13 @@
+[build]
+target-dir = "target"
+
+[alias]
+xtask = "run --package xtask --"
+
+# eBPF programs need to be built with specific settings
+[target.bpfel-unknown-none]
+rustflags = ["-C", "link-arg=--btf"]
+
+[env]
+# Disable stack protector for eBPF builds
+CARGO_ENCODED_RUSTFLAGS = { value = "", force = true }

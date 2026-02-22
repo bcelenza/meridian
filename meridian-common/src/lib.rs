@@ -27,8 +27,11 @@ pub struct VfsEvent {
     pub comm: [u8; COMM_LEN],
     /// Operation type (read or write).
     pub op: u8,
+    /// Whether the operation was served from page cache (no block I/O).
+    /// Only meaningful for reads; always false for writes.
+    pub cache_hit: u8,
     /// Padding for alignment.
-    pub _pad: [u8; 3],
+    pub _pad: [u8; 2],
     /// Bytes transferred.
     pub bytes: u64,
     /// Operation latency in nanoseconds.

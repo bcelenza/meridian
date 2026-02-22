@@ -39,13 +39,24 @@ pub async fn process_events(bpf: &mut aya::Ebpf) -> Result<()> {
             if item.len() >= std::mem::size_of::<VfsEvent>() {
                 let event: VfsEvent =
                     unsafe { std::ptr::read_unaligned(item.as_ptr() as *const _) };
+                let cache_status = if event.op == 0 {
+                    // Only show cache status for reads
+                    if event.cache_hit != 0 {
+                        " cache=hit"
+                    } else {
+                        " cache=miss"
+                    }
+                } else {
+                    ""
+                };
                 println!(
-                    "pid={} comm={} op={} bytes={} latency_ns={} ts={}",
+                    "pid={} comm={} op={} bytes={} latency_ns={}{} ts={}",
                     event.pid,
                     comm_to_string(&event.comm),
                     op_to_str(event.op),
                     event.bytes,
                     event.latency_ns,
+                    cache_status,
                     event.timestamp_ns,
                 );
             }

@@ -338,3 +338,141 @@ fn test_comm_filter_excludes_other_processes() -> Result<()> {
 
     Ok(())
 }
+
+/// Test that cache hit detection works correctly.
+/// Uses read_cold for guaranteed cache miss and read_twice for guaranteed cache hit.
+#[test]
+fn test_cache_hit_detection() -> Result<()> {
+    let ebpf_path = get_ebpf_path();
+    let helper_path = get_helper_path();
+
+    if !ebpf_path.exists() {
+        panic!("eBPF binary not found at {:?}", ebpf_path);
+    }
+    if !helper_path.exists() {
+        panic!(
+            "test_io_helper binary not found at {:?}. Build with: cargo build",
+            helper_path
+        );
+    }
+
+    // Create a temp file with known content on a real filesystem
+    // tmpfs doesn't support O_DIRECT, so we need a file on disk
+    // Use /var/tmp which is typically on a real filesystem that supports O_DIRECT
+    let real_dir = std::path::Path::new("/var/tmp");
+    let file_path = real_dir.join(format!("meridian_test_cache_{}.txt", std::process::id()));
+    let test_bytes = 4096usize; // Use a full page
+    let test_data = vec![0x42u8; test_bytes];
+    std::fs::write(&file_path, &test_data)?;
+    
+    // Ensure the file is flushed to disk
+    let file = std::fs::File::open(&file_path)?;
+    file.sync_all()?;
+    drop(file);
+
+    // Use unique comms for each test case
+    let miss_comm = "mrd_cachemiss";
+    let hit_comm = "mrd_cachehit";
+
+    // Load with no filter to capture both
+    let mut bpf = load_and_attach(&ebpf_path, None)?;
+
+    // Small delay to ensure probes are fully attached
+    thread::sleep(Duration::from_millis(100));
+
+    // Test cache miss: read_direct uses O_DIRECT to bypass page cache
+    let status = Command::new(&helper_path)
+        .arg(miss_comm)
+        .arg("read_direct")
+        .arg(&file_path)
+        .arg(test_bytes.to_string())
+        .status()?;
+    assert!(status.success(), "read_direct failed");
+
+    // Test cache hit: read_twice does two reads, second is guaranteed hit
+    let status = Command::new(&helper_path)
+        .arg(hit_comm)
+        .arg("read_twice")
+        .arg(&file_path)
+        .arg(test_bytes.to_string())
+        .status()?;
+    assert!(status.success(), "read_twice failed");
+
+    // Clean up the test file
+    let _ = std::fs::remove_file(&file_path);
+
+    // Give the ring buffer time to be populated
+    thread::sleep(Duration::from_millis(100));
+
+    // Read events
+    let events = read_events(&mut bpf)?;
+
+    println!("Total events captured: {}", events.len());
+
+    // Find cache miss events
+    let miss_events: Vec<_> = events
+        .iter()
+        .filter(|e| {
+            e.op == IoOp::Read as u8
+                && comm_to_string(&e.comm) == miss_comm
+                && e.bytes == test_bytes as u64
+        })
+        .collect();
+
+    println!("Cache miss test events:");
+    for (i, e) in miss_events.iter().enumerate() {
+        println!(
+            "  Event {}: bytes={} cache_hit={}",
+            i,
+            e.bytes,
+            e.cache_hit != 0
+        );
+    }
+
+    assert_eq!(
+        miss_events.len(),
+        1,
+        "Expected exactly 1 read_cold event, got {}",
+        miss_events.len()
+    );
+    assert_eq!(
+        miss_events[0].cache_hit, 0,
+        "read_cold should result in cache miss"
+    );
+
+    // Find cache hit events (read_twice produces 2 reads)
+    let hit_events: Vec<_> = events
+        .iter()
+        .filter(|e| {
+            e.op == IoOp::Read as u8
+                && comm_to_string(&e.comm) == hit_comm
+                && e.bytes == test_bytes as u64
+        })
+        .collect();
+
+    println!("Cache hit test events:");
+    for (i, e) in hit_events.iter().enumerate() {
+        println!(
+            "  Event {}: bytes={} cache_hit={}",
+            i,
+            e.bytes,
+            e.cache_hit != 0
+        );
+    }
+
+    assert_eq!(
+        hit_events.len(),
+        2,
+        "Expected exactly 2 read_twice events, got {}",
+        hit_events.len()
+    );
+    // Second read should definitely be a cache hit
+    assert_eq!(
+        hit_events[1].cache_hit, 1,
+        "Second read in read_twice should be a cache hit"
+    );
+
+    println!("Cache detection working: miss detected for read_cold, hit detected for second read_twice");
+
+    Ok(())
+}

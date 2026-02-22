@@ -77,6 +77,15 @@ pub fn load_and_attach(bpf_path: &Path, filter_comm: Option<&str>) -> Result<Ebp
     vfs_write_exit.attach("vfs_write", 0)?;
     info!("Attached kretprobe to vfs_write");
 
+    // Attach kprobe for submit_bio to track block I/O (cache miss detection)
+    let submit_bio_entry: &mut KProbe = bpf
+        .program_mut("submit_bio_entry")
+        .context("Failed to find submit_bio_entry program")?
+        .try_into()?;
+    submit_bio_entry.load()?;
+    submit_bio_entry.attach("submit_bio", 0)?;
+    info!("Attached kprobe to submit_bio for cache hit detection");
+
     Ok(bpf)
 }
 

@@ -1,7 +1,8 @@
 //! Meridian eBPF probes for VFS layer I/O monitoring.
 //!
 //! This program attaches to `vfs_read` and `vfs_write` functions to capture
-//! file I/O operations at the VFS layer.
+//! file I/O operations at the VFS layer. It also tracks block I/O via
+//! `submit_bio` to detect page cache hits.
 
 #![no_std]
 #![no_main]
@@ -28,6 +29,11 @@ static ENTRY_TIMESTAMPS: HashMap<u64, u64> = HashMap::with_max_entries(10240, 0)
 /// Key: 0 (single entry), Value: target comm (16 bytes, null-terminated)
 #[map]
 static COMM_FILTER: HashMap<u32, [u8; 16]> = HashMap::with_max_entries(1, 0);
+
+/// Track whether a thread has issued block I/O during a VFS operation.
+/// Key: pid_tgid (full 64-bit thread ID), Value: 1 if block I/O occurred
+#[map]
+static BLOCK_IO_FLAG: HashMap<u64, u8> = HashMap::with_max_entries(10240, 0);
 
 /// Pack PID and operation into a single u64 key.
 #[inline(always)]
@@ -76,6 +82,10 @@ fn handle_entry(_ctx: &ProbeContext, op: IoOp) -> u32 {
     let key = make_key(pid, op as u8);
 
     let _ = ENTRY_TIMESTAMPS.insert(&key, &ts, 0);
+
+    // Clear block I/O flag at start of VFS operation
+    let _ = BLOCK_IO_FLAG.remove(&pid_tgid);
+
     0
 }
 
@@ -117,6 +127,18 @@ fn handle_exit(ctx: &RetProbeContext, op: IoOp) -> u32 {
 
     let bytes = ret as u64;
 
+    // Check if block I/O occurred during this operation
+    // For reads: no block I/O means cache hit
+    // For writes: always consider it a "miss" (data goes to page cache then disk)
+    let had_block_io = unsafe { BLOCK_IO_FLAG.get(&pid_tgid) }.is_some();
+    let _ = BLOCK_IO_FLAG.remove(&pid_tgid);
+
+    let cache_hit = if op == IoOp::Read && !had_block_io && bytes > 0 {
+        1u8
+    } else {
+        0u8
+    };
+
     // Reserve space in ring buffer and write event
     if let Some(mut entry) = EVENTS.reserve::<VfsEvent>(0) {
         let event = entry.as_mut_ptr();
@@ -124,7 +146,8 @@ fn handle_exit(ctx: &RetProbeContext, op: IoOp) -> u32 {
             (*event).pid = pid;
             (*event).comm = comm;
             (*event).op = op as u8;
-            (*event)._pad = [0u8; 3];
+            (*event).cache_hit = cache_hit;
+            (*event)._pad = [0u8; 2];
             (*event).bytes = bytes;
             (*event).latency_ns = latency_ns;
             (*event).timestamp_ns = exit_ts;
@@ -153,6 +176,18 @@ pub fn vfs_write_entry(ctx: ProbeContext) -> u32 {
 #[kretprobe]
 pub fn vfs_write_exit(ctx: RetProbeContext) -> u32 {
     handle_exit(&ctx, IoOp::Write)
+}
+
+/// Probe for submit_bio to detect block I/O.
+/// When a thread issues block I/O, we mark it so we know it wasn't a cache hit.
+#[kprobe]
+pub fn submit_bio_entry(_ctx: ProbeContext) -> u32 {
+    let pid_tgid = bpf_get_current_pid_tgid();
+
+    // Mark that this thread has issued block I/O
+    let _ = BLOCK_IO_FLAG.insert(&pid_tgid, &1u8, 0);
+
+    0
 }
 
 #[panic_handler]

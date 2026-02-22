@@ -1,0 +1,14 @@
+[package]
+name = "meridian-ebpf"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+aya-ebpf = "0.1"
+aya-log-ebpf = "0.1"
+meridian-common = { path = "../meridian-common" }
+
+[[bin]]
+name = "meridian-probes"
+path = "src/main.rs"

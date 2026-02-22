@@ -106,6 +106,6 @@ Per PID, the agent tracks and reports:
 ## Scope & Filtering
 
 - **Default**: Monitor all processes system-wide.
-- **Optional PID filter**: One or more PIDs can be specified via CLI arguments to restrict monitoring.
+- **Optional comm filter**: A process name (comm) can be specified via CLI arguments to restrict monitoring to processes with that name.
 - **I/O types**: Only regular file I/O (disk-backed files). Socket, pipe, and other non-file I/O is excluded.
-- eBPF probes filter at the kernel level when a PID filter is active, minimizing overhead.
+- eBPF probes filter at the kernel level when a comm filter is active, minimizing overhead.

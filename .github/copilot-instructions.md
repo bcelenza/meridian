@@ -22,6 +22,7 @@ This is a Rust project managed with Cargo. The standard Rust project layout appl
 - Use `clippy` for linting and `rustfmt` for formatting.
 - Keep unsafe code to a minimum; document and justify any `unsafe` blocks.
 - Prefer the standard library and well-maintained crates over hand-rolled solutions.
+- See `SPECIFICATION.md` for implementation details.
 
 ## Building & Testing
 

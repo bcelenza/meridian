@@ -67,10 +67,13 @@ fn main() -> Result<()> {
         .join("release")
         .join("meridian-probes");
 
-    println!(
-        "cargo:rustc-env=MERIDIAN_EBPF_PATH={}",
-        ebpf_binary.display()
-    );
+    // Copy to a predictable location in target directory
+    let target_dir = workspace_root.join("target").join("bpf");
+    std::fs::create_dir_all(&target_dir)?;
+    let dest_path = target_dir.join("meridian-probes");
+    std::fs::copy(&ebpf_binary, &dest_path).context("Failed to copy eBPF binary")?;
+
+    println!("cargo:rustc-env=MERIDIAN_EBPF_PATH={}", dest_path.display());
 
     Ok(())
 }

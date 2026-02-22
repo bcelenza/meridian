@@ -95,7 +95,7 @@ Per PID, the agent tracks and reports:
 2. **Throughput** — Bytes per second (read/write), computed per operation and as a rolling aggregate.
 3. **Latency** — Per-operation latency, emitted as a distrubution type when used for metrics.
 4. **I/O Timing** — Wall-clock timing of when I/O operations occurred.
-5. **Cache Hit Ratio** — Percentage of operations served from page cache vs. disk.
+5. **Cache Hit** — Whether the operations were served from page cache vs. disk.
 
 ### Output
 

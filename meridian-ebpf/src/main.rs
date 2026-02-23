@@ -182,6 +182,15 @@ pub fn vfs_write_exit(ctx: RetProbeContext) -> u32 {
 /// When a thread issues block I/O, we mark it so we know it wasn't a cache hit.
 #[kprobe]
 pub fn submit_bio_entry(_ctx: ProbeContext) -> u32 {
+    let comm = match bpf_get_current_comm() {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+
+    if !should_trace(&comm) {
+        return 0;
+    }
+
     let pid_tgid = bpf_get_current_pid_tgid();
 
     // Mark that this thread has issued block I/O

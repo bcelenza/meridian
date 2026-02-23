@@ -74,6 +74,12 @@ With comm filtering (only monitor `dd` processes):
 sudo ./target/debug/meridian --bpf-path ./target/bpf/meridian-probes --comm dd
 ```
 
+With a custom OTLP gRPC endpoint for metrics export (defaults to `http://localhost:4317`):
+
+```sh
+sudo ./target/debug/meridian --bpf-path ./target/bpf/meridian-probes --otlp-endpoint http://otel-collector:4317
+```
+
 ## Project Structure
 
 ```

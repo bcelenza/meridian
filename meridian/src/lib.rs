@@ -1,5 +1,7 @@
 //! Meridian library - core functionality for loading eBPF and processing events.
 
+pub mod metrics;
+
 use anyhow::{Context, Result};
 use aya::{maps::RingBuf, programs::KProbe, Ebpf};
 use aya_log::EbpfLogger;

@@ -7,8 +7,10 @@ use anyhow::Result;
 use aya::maps::RingBuf;
 use clap::Parser;
 use log::{info, warn};
+use meridian::metrics::{self, MetricsRecorder};
 use meridian::{comm_to_string, load_and_attach, op_to_str};
 use meridian_common::VfsEvent;
+use opentelemetry::metrics::MeterProvider;
 use std::path::PathBuf;
 use tokio::signal;
 
@@ -22,10 +24,14 @@ pub struct Args {
     /// Optional process name (comm) to filter events
     #[arg(short, long)]
     pub comm: Option<String>,
+
+    /// OTLP gRPC endpoint for metrics export
+    #[arg(long, default_value = "http://localhost:4317")]
+    pub otlp_endpoint: String,
 }
 
 /// Process events from the ring buffer.
-pub async fn process_events(bpf: &mut aya::Ebpf) -> Result<()> {
+pub async fn process_events(bpf: &mut aya::Ebpf, metrics_recorder: &MetricsRecorder) -> Result<()> {
     let ring_buf = RingBuf::try_from(bpf.map_mut("EVENTS").unwrap())?;
     let mut poll = tokio::io::unix::AsyncFd::new(ring_buf)?;
 
@@ -59,6 +65,7 @@ pub async fn process_events(bpf: &mut aya::Ebpf) -> Result<()> {
                     cache_status,
                     event.timestamp_ns,
                 );
+                metrics_recorder.record_event(&event);
             }
         }
 
@@ -71,10 +78,15 @@ async fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
 
+    // Initialise OTLP metrics pipeline.
+    let meter_provider = metrics::init_otlp_metrics(&args.otlp_endpoint)?;
+    let meter = meter_provider.meter("meridian");
+    let recorder = MetricsRecorder::new(&meter);
+
     let mut bpf = load_and_attach(&args.bpf_path, args.comm.as_deref())?;
 
     tokio::select! {
-        result = process_events(&mut bpf) => {
+        result = process_events(&mut bpf, &recorder) => {
             if let Err(e) = result {
                 warn!("Event processing error: {}", e);
             }
@@ -82,6 +94,10 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down...");
         }
+    }
+
+    if let Err(e) = meter_provider.shutdown() {
+        warn!("Failed to shutdown metrics provider: {:?}", e);
     }
 
     Ok(())

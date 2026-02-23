@@ -25,3 +25,7 @@ clap = { version = "4.4", features = ["derive"] }
 env_logger = "0.11"
 log = "0.4"
 tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
+hostname = "0.4"
+opentelemetry = { version = "0.31", features = ["metrics"] }
+opentelemetry_sdk = { version = "0.31", features = ["metrics"] }
+opentelemetry-otlp = { version = "0.31", features = ["metrics", "grpc-tonic"] }

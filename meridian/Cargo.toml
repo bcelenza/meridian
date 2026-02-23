@@ -12,11 +12,16 @@ clap = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }
+hostname = { workspace = true }
 libc = "0.2"
 meridian-common = { path = "../meridian-common", features = ["user"] }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.10"
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 [build-dependencies]
 anyhow = { workspace = true }

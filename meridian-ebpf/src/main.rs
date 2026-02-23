@@ -20,7 +20,7 @@ use meridian_common::{IoOp, VfsEvent};
 static EVENTS: RingBuf = RingBuf::with_byte_size(256 * 1024, 0);
 
 /// Map to store entry timestamps for latency calculation.
-/// Key: (pid, op) packed as u64, Value: timestamp_ns
+/// Key: (pid_tgid, op) packed as u64, Value: timestamp_ns
 #[map]
 static ENTRY_TIMESTAMPS: HashMap<u64, u64> = HashMap::with_max_entries(10240, 0);
 
@@ -35,10 +35,13 @@ static COMM_FILTER: HashMap<u32, [u8; 16]> = HashMap::with_max_entries(1, 0);
 #[map]
 static BLOCK_IO_FLAG: HashMap<u64, u8> = HashMap::with_max_entries(10240, 0);
 
-/// Pack PID and operation into a single u64 key.
+/// Pack thread ID and operation into a single u64 key.
+///
+/// The op is XORed into the top byte — PIDs never reach bit 56, so this
+/// avoids any bit truncation and leaves room for future `IoOp` variants.
 #[inline(always)]
-fn make_key(pid: u32, op: u8) -> u64 {
-    ((pid as u64) << 8) | (op as u64)
+fn make_key(pid_tgid: u64, op: u8) -> u64 {
+    pid_tgid ^ ((op as u64) << 56)
 }
 
 /// Check if we should trace this process based on comm filter.
@@ -76,10 +79,9 @@ fn handle_entry(_ctx: &ProbeContext, op: IoOp) -> u32 {
     }
 
     let pid_tgid = bpf_get_current_pid_tgid();
-    let pid = (pid_tgid >> 32) as u32;
 
     let ts = unsafe { bpf_ktime_get_ns() };
-    let key = make_key(pid, op as u8);
+    let key = make_key(pid_tgid, op as u8);
 
     let _ = ENTRY_TIMESTAMPS.insert(&key, &ts, 0);
 
@@ -105,7 +107,7 @@ fn handle_exit(ctx: &RetProbeContext, op: IoOp) -> u32 {
     let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 
-    let key = make_key(pid, op as u8);
+    let key = make_key(pid_tgid, op as u8);
 
     let entry_ts = match unsafe { ENTRY_TIMESTAMPS.get(&key) } {
         Some(&ts) => ts,

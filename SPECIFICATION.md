@@ -89,13 +89,19 @@ Each I/O event emitted to user-space contains:
 
 ### Metrics Produced
 
-Per PID, the agent tracks and reports:
+Per PID/Comm, the agent tracks and reports:
 
 1. **I/O Operation Count** — Total read and write operations.
 2. **Throughput** — Bytes per second (read/write), computed per operation and as a rolling aggregate.
 3. **Latency** — Per-operation latency, emitted as a distrubution type when used for metrics.
 4. **I/O Timing** — Wall-clock timing of when I/O operations occurred.
 5. **Cache Hit** — Whether the operations were served from page cache vs. disk.
+
+Metrics include the following tags:
+1. **Comm** — The command name.
+2. **Hostname** — The name of the host emitting the metric.
+3. **Op** — Whether the operation was a read or a write.
+4. **Cache Hit** — True or false if the operation resulted in a cache hit.
 
 ### Output
 
